@@ -1,6 +1,7 @@
 from pathlib import Path
 import urllib.request
 import numpy as np
+import time
 
 class RandomNumberGenerator:
     """
@@ -19,7 +20,8 @@ class RandomNumberGenerator:
         self.file_length = file_length
         self.min = min
         self.max = max
-        self.refresh_data()
+        self.i = 0
+        self.npdata = np.empty( (0,), dtype=int )
 
     def next( self, n: int = 1 ):
         """
@@ -36,7 +38,7 @@ class RandomNumberGenerator:
                 n_generated = n
             else:
                 # Data length insufficient, download a new file and append it, then repeat
-                new_n_generated = n_generated + self.npdata.shape[ 0 ]
+                new_n_generated = n_generated + self.npdata.shape[ 0 ] - self.i
                 val[ n_generated:new_n_generated ] = self.npdata[ self.i: ]
                 n_generated = new_n_generated
                 self.refresh_data()
@@ -48,8 +50,15 @@ class RandomNumberGenerator:
         Get data from the random.org server to read
         """
         url = f'https://www.random.org/integers?num={self.file_length}&min={self.min}&max={self.max}&col=1&base=10&format=plain&rnd=new'
-        with urllib.request.urlopen( url ) as url_data:
-            filedata: str = url_data.read()
+        filedata = None
+        while filedata is None:
+            try:
+                filedata = "1\n2\n3"
+                #with urllib.request.urlopen( url ) as url_data:
+                #    filedata: str = url_data.read()
+            except:
+                print( 'Failed to download random data, trying again in 5 seconds...' )
+                time.sleep( 5 )
         self.npdata = np.array( filedata.splitlines(), dtype=int )
         self.i = 0
 
