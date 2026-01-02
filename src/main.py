@@ -13,10 +13,10 @@ if __name__ == '__main__':
     # Try to load model from file, otherwise make it from scratch
     model_path = Path( 'model.pt' )
     user_input_file = Path( 'userinput.txt' )
-    model = NeuralNetwork( model_path, user_input_file=user_input_file, lr=1e-1, epoch_len=10000 ).to( device )
+    model = NeuralNetwork( model_path, user_input_file=user_input_file, lr=1e-2, epoch_len=10000 ).to( device )
     if model_path.exists():
         print( f"Loading pretrained model from {model_path}" )
-        model.load_state_dict( torch.load( model_path, weights_only=True ) )
+        model.load_state_dict( torch.load( model_path, weights_only=True, map_location=torch.device( device ) ) )
 
     # Main program loop
     print( "Please enter a number 0-9, type help for a list of commands, or q to close" )

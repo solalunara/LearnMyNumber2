@@ -11,7 +11,7 @@ from collections.abc import Callable
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 
 class NeuralNetwork( nn.Module ):
-    def __init__( self, model_path: Path, epoch_len: int = 300, context_len: int = 25, model_width: int = 128, user_input_file: Path | None = None, lr: float = 1e-3 ):
+    def __init__( self, model_path: Path, epoch_len: int = 300, context_len: int = 25, model_width: int = 32, user_input_file: Path | None = None, lr: float = 1e-3 ):
         super().__init__()
         self.flatten = nn.Flatten()
         self.history = np.empty( 0, dtype=int )
@@ -23,6 +23,7 @@ class NeuralNetwork( nn.Module ):
         self.epoch_len = epoch_len
         self.model_width = model_width
         self.context_len = context_len
+        self.debug = True
 
         # help message dict
         self.help_message_dict = dict(
@@ -56,8 +57,8 @@ class NeuralNetwork( nn.Module ):
         )
 
         # Training parameters
-        self.loss_fn = nn.MSELoss()
-        self.optimizer = torch.optim.SGD( self.parameters(), lr=lr )
+        self.loss_fn = nn.CrossEntropyLoss()
+        self.optimizer = torch.optim.Adam( self.parameters(), lr=lr )
 
     def forward( self, x ):
         x = self.flatten( x )
@@ -157,10 +158,7 @@ class NeuralNetwork( nn.Module ):
 
             # Train the model on the actual user input
             print( f"Training model..." )
-            output_tensor = torch.zeros( input_len, 10, dtype=torch.float )
-            for i in range( input_len ):
-                output_tensor[ i, input[ i ] ] = 1
-            output_tensor = output_tensor.to( device )
+            output_tensor = torch.tensor( input, dtype=torch.long ).to( device )
 
             dataset = TensorDataset( model_input_tensor, output_tensor )
             dataloader = DataLoader( dataset, batch_size=input_len )
@@ -185,6 +183,12 @@ class NeuralNetwork( nn.Module ):
         self.train()
         for batch, (X, y) in enumerate( dataloader ):
             X, y = X.to( device ), y.to( device )
+            optimizer.zero_grad()
+            # Optional debug: capture parameter norm before the forward pass
+            if getattr( self, 'debug', False ):
+                param_norm_before = 0.0
+                for p in self.parameters():
+                    param_norm_before += p.data.norm().item()
 
             # Compute prediction error
             pred: torch.Tensor = self( X )
@@ -192,8 +196,22 @@ class NeuralNetwork( nn.Module ):
 
             # Backpropagation
             loss.backward()
+            # Optional debug: print gradient norm to verify gradients are non-zero
+            if getattr( self, 'debug', False ):
+                grad_norm = 0.0
+                for p in self.parameters():
+                    if p.grad is not None:
+                        grad_norm += p.grad.data.norm().item()
+                print( f"[DEBUG] grad_norm={grad_norm:.6f}" )
+
             optimizer.step()
-            optimizer.zero_grad()
+
+            # Optional debug: capture parameter norm after the optimizer step
+            if getattr( self, 'debug', False ):
+                param_norm_after = 0.0
+                for p in self.parameters():
+                    param_norm_after += p.data.norm().item()
+                print( f"[DEBUG] param_norm_before={param_norm_before:.6f} param_norm_after={param_norm_after:.6f} delta={param_norm_after-param_norm_before:.6f}" )
 
             loss, current = loss.item(), ( batch + 1 ) * len( X )
             print( f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]" )
