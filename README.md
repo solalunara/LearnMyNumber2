@@ -14,7 +14,7 @@ can be listed by the 'help' command.
 The program splits the user input from the 'read' command - as currently set up in the repo the split is 50/50.
 Included in the repository is a model trained on the full dataset repeated up to 160000 total data points,
 with the training graph
-![alt text](https://github.com/solalunara/LearnMyNumber2/blob/main/train_test_estim.jpg?raw=true)
+![training graph](https://github.com/solalunara/LearnMyNumber2/blob/main/train_test_estim.png?raw=true)
 where each epoch contains 10000 data points. With the current amount of training data the generalization process
 appears to plateau around epoch 10. This training process included a weight decay of 1e-4 to reduce overfitting.
 
