@@ -2,6 +2,31 @@ from pathlib import Path
 import urllib.request
 import numpy as np
 import time
+from numpy.random import MT19937, RandomState, SeedSequence
+
+class PseudoRandomNumberGenerator:
+    def __init__( self, min: int = 0, max: int = 9, seed: int = 100 ):
+        self.min = min
+        self.max = max
+        self.seed = seed
+        self.rs = RandomState( MT19937( SeedSequence( seed ) ) )
+
+    def next( self, n: int = 1 ):
+        np.random.seed()
+        return self.rs.randint( self.min, self.max + 1, n )
+    
+    def reset( self, seed: int | None = None ):
+        """
+        Reset the pseudo-random number generator
+        
+        :param seed: Optional - the seed to use for the random number generator. None uses the same seed as previously.
+        :type seed: int | None
+        """
+        if seed is None:
+            seed = self.seed
+        else:
+            self.seed = seed
+        self.rs = RandomState( MT19937( SeedSequence( seed ) ) )
 
 class RandomNumberGenerator:
     """
@@ -53,9 +78,9 @@ class RandomNumberGenerator:
         filedata = None
         while filedata is None:
             try:
-                filedata = "1\n2\n3"
-                #with urllib.request.urlopen( url ) as url_data:
-                #    filedata: str = url_data.read()
+                #filedata = "1\n2\n3"
+                with urllib.request.urlopen( url ) as url_data:
+                    filedata: str = url_data.read()
             except:
                 print( 'Failed to download random data, trying again in 5 seconds...' )
                 time.sleep( 5 )

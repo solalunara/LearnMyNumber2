@@ -1,7 +1,7 @@
 import torch.nn as nn
 from pathlib import Path
 import numpy as np
-from rng import RandomNumberGenerator
+from rng import PseudoRandomNumberGenerator
 import torch
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, TensorDataset
@@ -135,7 +135,7 @@ class NeuralNetwork( nn.Module ):
 class InteractableNeuralNetwork( NeuralNetwork ):
     def __init__( self, model_path: Path, epoch_len: int = 300, context_len: int = 5, model_width: int = 5, user_input_file: Path | None = None, lr: float = 1e-3, should_train: bool = False, eval_ratio: float = 0.1, weight_decay: float = 1e-4 ):
         super().__init__( context_len=context_len, model_width=model_width, lr=lr, weight_decay=weight_decay )
-        self.rng = RandomNumberGenerator()
+        self.rng = PseudoRandomNumberGenerator()
         self.should_train = should_train
         self.eval_ratio = eval_ratio
 
