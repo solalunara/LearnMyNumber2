@@ -12,14 +12,21 @@ The command 'read' currently reads the file userinput.txt, assuming one user inp
 can be listed by the 'help' command.
 
 The program splits the user input from the 'read' command - as currently set up in the repo the split is 50/50.
-Included in the repository is a model trained on the full dataset repeated up to 160000 total data points,
-with the training graph:
+Included in the repository is a model trained on the full dataset up to 500 iterations.
 
-![training graph](https://github.com/solalunara/LearnMyNumber2/blob/main/train_test_estim.png?raw=true)
+![loss graph](https://github.com/solalunara/LearnMyNumber2/blob/main/loss.png?raw=true)
 
-where each epoch contains 10000 data points. With the current amount of training data the generalization process
-appears to plateau around epoch 10. This training process included a weight decay of 1e-4 to reduce overfitting.
+With the current amount of training data the generalization process appears to plateau around call 250 at a
+learning rate of 1e-3, with the full dataset being trained on each iteration. This training process included
+a weight decay of 1e-3 to attempt to reduce overfitting.
+
+Included in the graph is also pseudo-random numbers from numpy passed to the model after the weights and biases
+have been set to their pre-training values, as a control sample. This fails to improve above a perplexity
+of 10, which is consistent with the setup of the problem as a classification between ten digits.
 
 The model appears to be able to predict the evaluation dataset to a mean of better than random chance, but
-with a high degree of uncertainty.
+prefers to overfit to the training data. The next steps are:
 
+1 - Adding more human pseudo-random data (feel free to PR!)
+2 - Switching architecture to an RNN
+3 - Compare against other strategies (e.g. never repeating numbers, only pick most common number, etc)
