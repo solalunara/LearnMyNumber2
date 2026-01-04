@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, TensorDataset
 import sys
 from collections.abc import Callable
+import pandas as pd
 
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 
@@ -15,8 +16,12 @@ class NeuralNetwork( nn.Module ):
         super().__init__()
         self.flatten = nn.Flatten()
         self.history = np.empty( 0, dtype=int )
-        self.train_accuracy_history = np.empty( 0, dtype=float )
-        self.test_accuracy_history = np.empty( 0, dtype=float )
+
+        self.nan_dict = dict( train=np.full( (1), np.nan, dtype=float ),
+                              test=np.full( (1), np.nan, dtype=float ),
+                              random=np.full( (1), np.nan, dtype=float ) )
+
+        self.loss_history = pd.DataFrame( self.nan_dict )
 
         self.model_width = model_width
         self.context_len = context_len
@@ -39,35 +44,35 @@ class NeuralNetwork( nn.Module ):
         logits = self.model( x )
         return logits
 
-    def eval_model( self, test_data: np.ndarray, is_train_data: bool = False ):
+    def eval_model( self, data: np.ndarray, data_type: str ):
         """
         Evaluates the model without training it. Still appends to model history.
         
-        :param test_data: Numpy array containing the real data which the model will be evaluated against
-        :type test_data: np.ndarray
+        :param data: Numpy array containing the real data which the model will be evaluated against
+        :type data: np.ndarray
 
-        :param is_train_data: Whether or not the passed data is also training data. This is used to choose
-        which accuracy history the results should be appended to, train or test.
+        :param data_type: Type of data - one of 'train', 'test', or 'random'. This determines the loss
+        history that is appended to, and if the data type is 'train' the model will be trained on the result
+        :type data_type: str
 
-        :type save_to_accuracy_history: bool
 
         :returns torch.Tensor: the model input tensor passed to the model, containing staggered history
         information for each element up to a maximum length of self.context_len
         """
         self.eval()
 
-        test_len = test_data.shape[ 0 ]
+        data_len = data.shape[ 0 ]
 
         # Add values to context until it's full, and return if we don't have enough
-        self.history = np.append( self.history, test_data )
+        self.history = np.append( self.history, data )
         if len( self.history ) < self.context_len:
             print( f'Context {len( self.history )} / {self.context_len}' )
             return
 
         # Sample the model, with input_len inputs, each one with its own history including the previous elements in input
-        model_input_tensor = torch.zeros( test_len, self.context_len, 10, dtype=torch.float )
-        history_start_index = len( self.history ) - test_len - self.context_len
-        for i in range( test_len ):
+        model_input_tensor = torch.zeros( data_len, self.context_len, 10, dtype=torch.float )
+        history_start_index = len( self.history ) - data_len - self.context_len
+        for i in range( data_len ):
             for j in range( self.context_len ):
                 model_input_tensor[ i, j, self.history[ history_start_index + i + j ] ] = 1
         model_input_tensor = model_input_tensor.to( device ) # send to gpu after all memory modifications done, if we are sending to the gpu
@@ -80,37 +85,30 @@ class NeuralNetwork( nn.Module ):
         actual_probs = np.empty( len( pred_probs ) )
         for i in range( len( y_preds ) ):
             y_probs[ i ] = pred_probs[ i, y_preds[ i ] ].item()
-            actual_probs[ i ] = pred_probs[ i, test_data[ i ] ].item()
+            actual_probs[ i ] = pred_probs[ i, data[ i ] ].item()
 
-        for i in range( len( y_probs ) ):
-            print( f"Model predicted {y_preds[ i ]} with probability {y_probs[ i ]*100:.1f}% - actual {test_data[ i ]} (model probability {actual_probs[ i ]*100:.1f}%)" )
+        #for i in range( len( y_probs ) ):
+            #print( f"Model predicted {y_preds[ i ]} with probability {y_probs[ i ]*100:.1f}% - actual {data[ i ]} (model probability {actual_probs[ i ]*100:.1f}%)" )
 
-        if is_train_data:
-            self.train_accuracy_history = np.append( self.train_accuracy_history, actual_probs )
-        else:
-            self.test_accuracy_history = np.append( self.test_accuracy_history, actual_probs )
+        output_tensor = torch.tensor( data, dtype=torch.long ).to( device )
+        loss: torch.Tensor = self.loss_fn( logits, output_tensor )
+        loss_value = loss.item()
 
-        return model_input_tensor
-    
-    def eval_and_train_model( self, train_data: np.ndarray ):
-        """
-        Evaluates and trains the model, adding the training data to the model history.
+        # Append the loss to the array by changing the last non-nan value, or adding another row if necessary
+        last_valid_index = self.loss_history[ data_type ].last_valid_index()
+        if last_valid_index is None:
+            last_valid_index = -1
+        loss_index = last_valid_index + 1
+        if loss_index >= self.loss_history.shape[ 0 ]:
+            self.loss_history = pd.concat( [ self.loss_history, pd.DataFrame( self.nan_dict, index=[ loss_index ] ) ] )
+
+        self.loss_history.loc[ loss_index, data_type ] = loss_value
         
-        :param train_data: Numpy array of training data
-        :type train_data: np.ndarray
-        """
-        model_input_tensor = self.eval_model( train_data, is_train_data=True )
-        self.train()
-
-        train_len = train_data.shape[ 0 ]
-
-        print( f"Training model..." )
-        output_tensor = torch.tensor( train_data, dtype=torch.long ).to( device )
-
-        dataset = TensorDataset( model_input_tensor, output_tensor )
-        dataloader = DataLoader( dataset, batch_size=train_len )
-        self.train_on_dataloader( dataloader, self.loss_fn, self.optimizer )
-        print( f"Trained!" )
+        if data_type == 'train' or data_type == 'random':
+            self.train()
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
 
     def train_on_dataloader( self, dataloader: DataLoader, loss_fn: Callable[ [torch.Tensor, torch.Tensor], torch.Tensor ], optimizer: torch.optim.Optimizer ):
         size = len( dataloader.dataset )
@@ -128,12 +126,12 @@ class NeuralNetwork( nn.Module ):
             optimizer.step()
 
             loss, current = loss.item(), ( batch + 1 ) * len( X )
-            print( f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]" )
+            #print( f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]" )
 
 
 
 class InteractableNeuralNetwork( NeuralNetwork ):
-    def __init__( self, model_path: Path, epoch_len: int = 300, context_len: int = 5, model_width: int = 5, user_input_file: Path | None = None, lr: float = 1e-3, should_train: bool = False, eval_ratio: float = 0.1, weight_decay: float = 1e-4 ):
+    def __init__( self, model_path: Path, epoch_len: int = 300, context_len: int = 5, model_width: int = 5, user_input_file: Path | None = None, lr: float = 1e-3, should_train: bool = False, eval_ratio: float = 0.3, weight_decay: float = 1e-4 ):
         super().__init__( context_len=context_len, model_width=model_width, lr=lr, weight_decay=weight_decay )
         self.rng = PseudoRandomNumberGenerator()
         self.should_train = should_train
@@ -181,21 +179,19 @@ class InteractableNeuralNetwork( NeuralNetwork ):
         print( f"Loading complete!" )
 
     def s_fn( self ):
-        plt.xlabel( 'Epochs' )
-        plt.ylabel( 'Percentage (%) given by the model to the user\'s answer' )
-        for label, accuracy_history in zip( [ 'train', 'test' ], [ self.train_accuracy_history, self.test_accuracy_history ] ):
-            n_epochs = len( accuracy_history ) // self.epoch_len
-            epochs = np.arange( 0, n_epochs, 1 )
-            accuracy_epochs = accuracy_history[ :n_epochs * self.epoch_len ].reshape( -1, self.epoch_len )
-            plt.errorbar( epochs, np.mean( accuracy_epochs, axis=1 ), np.std( accuracy_epochs, axis=1 ), label=label )
+        plt.xlabel( 'Train/Eval call' )
+        plt.ylabel( 'Perplexity' )
+        for label, color in zip( self.loss_history.keys(), [ 'b', 'orange', 'm' ] ):
+            loss_iters = np.arange( 0, self.loss_history[ label ].shape[ 0 ], 1 )
+            plt.plot( loss_iters, np.exp( self.loss_history[ label ] ), label=label, color=color )
         plt.legend()
         plt.show()
 
     def r_fn( self ):
-        self.training_loop( np.array( self.rng.next(), dtype=int ) )
+        self.eval_model( np.array( self.rng.next(), dtype=int ), 'random' )
 
     def repoch_fn( self ):
-        self.training_loop( np.array( self.rng.next( self.epoch_len ), dtype=int ) )
+        self.eval_model( np.array( self.rng.next( self.epoch_len ), dtype=int ), 'random' )
 
     def read_fn( self ):
         if self.user_input_file is not None:
@@ -207,8 +203,8 @@ class InteractableNeuralNetwork( NeuralNetwork ):
             train_test_split_index = int( ( 1 - self.eval_ratio ) * len( data ) )
             train = data[ :train_test_split_index ]
             test = data[ train_test_split_index: ]
-            self.eval_and_train_model( np.array( train, dtype=int ) )
-            self.eval_model( np.array( test, dtype=int ) )
+            self.eval_model( np.array( train, dtype=int ), 'train' )
+            self.eval_model( np.array( test, dtype=int ), 'test' )
         else:
             print( 'User input file not set - please set it for the model' )
 
@@ -237,7 +233,4 @@ class InteractableNeuralNetwork( NeuralNetwork ):
             return
 
         # input is now a numpy array of dtype=int
-        if self.should_train:
-            self.eval_and_train_model( input )
-        else:
-            self.eval_model( input )
+        self.eval_model( input, 'train' if self.should_train else 'test' )
