@@ -16,8 +16,16 @@ if __name__ == '__main__':
     model_path = Path( 'model2.pt' )
     user_input_file = Path( 'userinput.txt' )
     lr = 1e-3
-    weight_decay = 1e-3
-    model = InteractableNeuralNetwork( model_path, user_input_file=user_input_file, lr=lr, epoch_len=10000, eval_ratio=0.5, weight_decay=weight_decay ).to( device )
+    weight_decay = 1e-2
+    model = InteractableNeuralNetwork( model_path, 
+                                       user_input_file=user_input_file, 
+                                       lr=lr, 
+                                       epoch_len=10000, 
+                                       eval_ratio=0.1, 
+                                       weight_decay=weight_decay, 
+                                       context_len=25, 
+                                       model_depth=1
+                                    ).to( device )
     if model_path.exists():
         print( f"Loading pretrained model from {model_path}" )
         model.load_state_dict( torch.load( model_path, weights_only=True, map_location=torch.device( device ) ) )
@@ -28,7 +36,7 @@ if __name__ == '__main__':
 
 
     # train the model
-    for i in tqdm( range( 500 ), desc='read' ):
+    for i in tqdm( range( 300 ), desc='read' ):
         model.exec_command( 'read' )
 
     # Reset the model, and the optimizer
@@ -39,7 +47,7 @@ if __name__ == '__main__':
     model.history = np.empty( (0), dtype=int )
 
     # RNG for reference
-    for i in tqdm( range( 500 ), desc='repoch' ):
+    for i in tqdm( range( 100 ), desc='repoch' ):
         model.exec_command( 'repoch' )
 
 

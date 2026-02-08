@@ -12,7 +12,7 @@ import pandas as pd
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 
 class NeuralNetwork( nn.Module ):
-    def __init__( self, context_len: int = 25, model_width: int = 32, lr: float = 1e-3, weight_decay: float = 1e-4 ):
+    def __init__( self, context_len: int = 25, model_width: int = 32, model_depth: int = 4, lr: float = 1e-3, weight_decay: float = 1e-4 ):
         super().__init__()
         self.flatten = nn.Flatten()
         self.history = np.empty( 0, dtype=int )
@@ -25,23 +25,25 @@ class NeuralNetwork( nn.Module ):
 
         self.model_width = model_width
         self.context_len = context_len
+        self.model_depth = model_depth
 
         # Model
-        self.model = nn.Sequential(
-            nn.Linear( 10*self.context_len, self.model_width ),
-            nn.ReLU(),
-            nn.Linear( self.model_width, self.model_width ),
-            nn.ReLU(),
-            nn.Linear( self.model_width, 10 ),
-        )
+        self.model = nn.LSTM( 10, 10, self.model_depth, batch_first=True )
+        #self.model = nn.Sequential(
+        #    nn.Linear( 10*self.context_len, self.model_width ),
+        #    nn.ReLU(),
+        #    nn.Linear( self.model_width, self.model_width ),
+        #    nn.ReLU(),
+        #    nn.Linear( self.model_width, 10 ),
+        #)
 
         # Training parameters
         self.loss_fn = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.Adam( self.parameters(), lr=lr, weight_decay=weight_decay )
 
     def forward( self, x ):
-        x = self.flatten( x )
-        logits = self.model( x )
+        #x = self.flatten( x )
+        logits, (h_n, c_n) = self.model( x )
         return logits
 
     def eval_model( self, data: np.ndarray, data_type: str ):
@@ -77,7 +79,7 @@ class NeuralNetwork( nn.Module ):
                 model_input_tensor[ i, j, self.history[ history_start_index + i + j ] ] = 1
         model_input_tensor = model_input_tensor.to( device ) # send to gpu after all memory modifications done, if we are sending to the gpu
 
-        logits = self( model_input_tensor )
+        logits = self( model_input_tensor )[ :, -1, : ]
         pred_probs: torch.Tensor = nn.Softmax( dim=1 )( logits )
         pred_probs = pred_probs.detach() #to convert to scalars
         y_preds = pred_probs.argmax( 1 )
@@ -91,6 +93,12 @@ class NeuralNetwork( nn.Module ):
             #print( f"Model predicted {y_preds[ i ]} with probability {y_probs[ i ]*100:.1f}% - actual {data[ i ]} (model probability {actual_probs[ i ]*100:.1f}%)" )
 
         output_tensor = torch.tensor( data, dtype=torch.long ).to( device )
+
+        #output_tensor = torch.zeros( data_len, 10, dtype=torch.long )
+        #for i in range( data_len ):
+        #    output_tensor[ i, data[ i ] ] = 1
+        #output_tensor = output_tensor.to( device )
+
         loss: torch.Tensor = self.loss_fn( logits, output_tensor )
         loss_value = loss.item()
 
@@ -131,8 +139,8 @@ class NeuralNetwork( nn.Module ):
 
 
 class InteractableNeuralNetwork( NeuralNetwork ):
-    def __init__( self, model_path: Path, epoch_len: int = 300, context_len: int = 5, model_width: int = 5, user_input_file: Path | None = None, lr: float = 1e-3, should_train: bool = False, eval_ratio: float = 0.3, weight_decay: float = 1e-4 ):
-        super().__init__( context_len=context_len, model_width=model_width, lr=lr, weight_decay=weight_decay )
+    def __init__( self, model_path: Path, epoch_len: int = 300, model_depth: int = 4, context_len: int = 5, model_width: int = 32, user_input_file: Path | None = None, lr: float = 1e-3, should_train: bool = False, eval_ratio: float = 0.3, weight_decay: float = 1e-4 ):
+        super().__init__( context_len=context_len, model_width=model_width, model_depth=model_depth, lr=lr, weight_decay=weight_decay )
         self.rng = PseudoRandomNumberGenerator()
         self.should_train = should_train
         self.eval_ratio = eval_ratio
