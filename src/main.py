@@ -21,7 +21,7 @@ if __name__ == '__main__':
                                        user_input_file=user_input_file, 
                                        lr=lr, 
                                        epoch_len=10000, 
-                                       eval_ratio=0.1, 
+                                       eval_ratio=0.2, 
                                        weight_decay=weight_decay, 
                                        context_len=25, 
                                        model_depth=1
@@ -36,8 +36,8 @@ if __name__ == '__main__':
 
 
     # train the model
-    for i in tqdm( range( 300 ), desc='read' ):
-        model.exec_command( 'read' )
+    #for i in tqdm( range( 300 ), desc='read' ):
+    #    model.exec_command( 'read' )
 
     # Reset the model, and the optimizer
     weights_buffer.seek( 0 )
@@ -47,8 +47,8 @@ if __name__ == '__main__':
     model.history = np.empty( (0), dtype=int )
 
     # RNG for reference
-    for i in tqdm( range( 100 ), desc='repoch' ):
-        model.exec_command( 'repoch' )
+    #for i in tqdm( range( 100 ), desc='repoch' ):
+    #    model.exec_command( 'repoch' )
 
 
     # Main program loop

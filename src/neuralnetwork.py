@@ -19,7 +19,8 @@ class NeuralNetwork( nn.Module ):
 
         self.nan_dict = dict( train=np.full( (1), np.nan, dtype=float ),
                               test=np.full( (1), np.nan, dtype=float ),
-                              random=np.full( (1), np.nan, dtype=float ) )
+                              random=np.full( (1), np.nan, dtype=float ),
+                              gen=np.full( (1), np.nan, dtype=float ) )
 
         self.loss_history = pd.DataFrame( self.nan_dict )
 
@@ -61,14 +62,19 @@ class NeuralNetwork( nn.Module ):
         :returns torch.Tensor: the model input tensor passed to the model, containing staggered history
         information for each element up to a maximum length of self.context_len
         """
-        self.eval()
+        #self.eval()
+        self.train()
 
         data_len = data.shape[ 0 ]
 
         # Add values to context until it's full, and return if we don't have enough
-        self.history = np.append( self.history, data )
-        if len( self.history ) < self.context_len:
-            print( f'Context {len( self.history )} / {self.context_len}' )
+        if data_type != 'gen':
+            self.history = np.append( self.history, data )
+            if len( self.history ) < self.context_len:
+                print( f'Context {len( self.history )} / {self.context_len}' )
+                return
+        elif len( self.history ) < self.context_len:
+            print( f'Please provide a context of at least {self.context_len} before attempting to generate tokens' )
             return
 
         # Sample the model, with input_len inputs, each one with its own history including the previous elements in input
@@ -88,6 +94,11 @@ class NeuralNetwork( nn.Module ):
         for i in range( len( y_preds ) ):
             y_probs[ i ] = pred_probs[ i, y_preds[ i ] ].item()
             actual_probs[ i ] = pred_probs[ i, data[ i ] ].item()
+
+        # If we only want generation, save here and return
+        if data_type == 'gen':
+            self.history = np.append( self.history, y_preds )
+            return y_preds
 
         #for i in range( len( y_probs ) ):
             #print( f"Model predicted {y_preds[ i ]} with probability {y_probs[ i ]*100:.1f}% - actual {data[ i ]} (model probability {actual_probs[ i ]*100:.1f}%)" )
@@ -139,7 +150,7 @@ class NeuralNetwork( nn.Module ):
 
 
 class InteractableNeuralNetwork( NeuralNetwork ):
-    def __init__( self, model_path: Path, epoch_len: int = 300, model_depth: int = 4, context_len: int = 5, model_width: int = 32, user_input_file: Path | None = None, lr: float = 1e-3, should_train: bool = False, eval_ratio: float = 0.3, weight_decay: float = 1e-4 ):
+    def __init__( self, model_path: Path, epoch_len: int = 300, model_depth: int = 4, context_len: int = 5, model_width: int = 32, user_input_file: Path | None = None, lr: float = 1e-3, should_train: bool = False, eval_ratio: float = 0.3, weight_decay: float = 1e-4, outfile: str = 'output.txt' ):
         super().__init__( context_len=context_len, model_width=model_width, model_depth=model_depth, lr=lr, weight_decay=weight_decay )
         self.rng = PseudoRandomNumberGenerator()
         self.should_train = should_train
@@ -148,6 +159,7 @@ class InteractableNeuralNetwork( NeuralNetwork ):
         self.model_path = model_path
         self.user_input_file = user_input_file
         self.epoch_len = epoch_len
+        self.outfile = outfile
 
         # help message dict
         self.help_message_dict = dict(
@@ -158,7 +170,9 @@ class InteractableNeuralNetwork( NeuralNetwork ):
             s=f'display accuracy of model in epochs of {self.epoch_len}',
             r='get a truly random number from random.org',
             repoch=f'get {self.epoch_len} (epoch length) truly random numbers from random.org',
-            read=f'read user inputs from {self.user_input_file} and return control when finished'
+            read=f'read user inputs from {self.user_input_file} and return control when finished',
+            gen='generate a random number by sampling the model',
+            genepoch=f'generate {self.epoch_len} random numbers and save to {self.outfile}'
         )
         max_key_length = max( [ len( k ) for k in self.help_message_dict.keys() ] )
         max_val_length = max( [ len( v ) for v in self.help_message_dict.values() ] )
@@ -215,6 +229,19 @@ class InteractableNeuralNetwork( NeuralNetwork ):
             self.eval_model( np.array( test, dtype=int ), 'test' )
         else:
             print( 'User input file not set - please set it for the model' )
+
+    def gen_fn( self ):
+        num = self.eval_model( np.zeros( 1 ), 'gen' ).item()
+        with open( self.outfile, 'w+' ) as file:
+            file.write( f'{num}\n' )
+
+    def genepoch_fn( self ):
+        nums = self.eval_model( np.zeros( self.epoch_len ) ).numpy()
+        with open( self.outfile, 'w+' ) as file:
+            for num in nums:
+                file.write( f'{num}\n' )
+
+
 
     def exec_command( self, input: str ):
         """
